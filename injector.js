@@ -1,6 +1,9 @@
 // Create an iframe and inject the Spotlight HTML/CSS
 (async function() {
     const htmlUrl = "https://raw.githubusercontent.com/piorpiedev/JellyfinSpotlight/refs/heads/main/spotlight.html";
+    const cssUrl = "https://raw.githubusercontent.com/piorpiedev/JellyfinSpotlight/refs/heads/main/spotlight.css";
+    const jsHeadUrl = "https://raw.githubusercontent.com/piorpiedev/JellyfinSpotlight/refs/heads/main/spotlight-head.js";
+    const jsBodyUrl = "https://raw.githubusercontent.com/piorpiedev/JellyfinSpotlight/refs/heads/main/spotlight-body.js";
 
     // Helper to Wait for the Home Library section to load
     const waitForElement = (selector) => {
@@ -46,9 +49,26 @@
 
         // Fetch and Write Content
         try {
-            const htmlRes = await Promise.resolve(fetch(htmlUrl));
-            if (!htmlRes.ok) throw new Error("Failed to load Spotlight files");
+            const [htmlRes, cssRes, jsHeadRes, jsBodyRes] = await Promise.all([fetch(htmlUrl), fetch(cssUrl), fetch(jsHeadUrl), fetch(jsBodyUrl)]);
+            if (!htmlRes.ok || !cssRes.ok || !jsHeadRes.ok || !jsBodyRes.ok) throw new Error("Failed to load Spotlight files");
             let htmlContent = await htmlRes.text();
+
+            console.log(htmlContent);
+            htmlContent = htmlContent.replace(
+                `<script src="spotlight-head.js"></script>`,
+                `<script>${await jsHeadRes.text()}</script>`,
+            )
+            console.log(htmlContent);
+            htmlContent = htmlContent.replace(
+                `<script src="spotlight-body.js"></script>`,
+                `<script>${await jsBodyRes.text()}</script>`,
+            )
+            console.log(htmlContent);
+            htmlContent = htmlContent.replace(
+                `<link rel="stylesheet" href="spotlight.css">`,
+                `<style>${await cssRes.text()}</style>`,
+            )
+            console.log(htmlContent);
 
             // Write to the Iframe (Same-Origin)
             // Writing to "about:blank" allows the iframe to access window.parent (your Jellyfin Auth)

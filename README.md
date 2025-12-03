@@ -42,12 +42,9 @@
 
 ## 🛠️ Installation
 
-Simply inject this code into the page (for example with the js injector plugin):
-```js
-document.head.appendChild(Object.assign(document.createElement("script"), { src: "https://github.com/piorpiedev/JellyfinSpotlight/raw/refs/heads/main/injector.js" }));
-```
+Simply inject the content of `injector.js` into the page (by using the jsinjector plugin for example)
 
-And delete your browser's cache (reload with Ctrl+Shift+R, or delete the mobile app's cache)
+Make sure to delete your browser's cache (reload with Ctrl+Shift+R, or delete the mobile app's cache)
 
 ---
 
@@ -61,7 +58,7 @@ And delete your browser's cache (reload with Ctrl+Shift+R, or delete the mobile 
 
 - Certain youtube videos are not allowed to be played off-site, the fail is noted in console, and those slides will revert to image only
 
-- Several variables can be adjusted around line 100 in `spotlight.html`:
+- Several variables can be adjusted around line 100 in `spotlight-body.js`:
   - `moviesSeriesBoth = 3` — (1 = movies only, 2 = series only, 3 = both)
   - `shuffleInterval = 10000` — time (ms) between static slide changes without video
   - `useTrailers = true` — set to `false` to disable trailers
