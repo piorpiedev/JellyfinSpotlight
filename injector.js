@@ -53,22 +53,18 @@
             if (!htmlRes.ok || !cssRes.ok || !jsHeadRes.ok || !jsBodyRes.ok) throw new Error("Failed to load Spotlight files");
             let htmlContent = await htmlRes.text();
 
-            console.log(htmlContent);
             htmlContent = htmlContent.replace(
                 `<script src="spotlight-head.js"></script>`,
                 `<script>${await jsHeadRes.text()}</script>`,
             )
-            console.log(htmlContent);
             htmlContent = htmlContent.replace(
                 `<script src="spotlight-body.js"></script>`,
                 `<script>${await jsBodyRes.text()}</script>`,
             )
-            console.log(htmlContent);
             htmlContent = htmlContent.replace(
                 `<link rel="stylesheet" href="spotlight.css">`,
                 `<style>${await cssRes.text()}</style>`,
             )
-            console.log(htmlContent);
 
             // Write to the Iframe (Same-Origin)
             // Writing to "about:blank" allows the iframe to access window.parent (your Jellyfin Auth)
