@@ -2,14 +2,14 @@
 
 **Spotlight** helps you rediscover your media by playing local or remote trailers fetched from your libraries' metadata — creating a living, evolving homepage slideshow that highlights your collection.
 
-![2](https://raw.githubusercontent.com/JSethCreates/jellyfin-script-spotlight/refs/heads/main/screenshots/spotlightdemo.gif)
+![2](https://raw.githubusercontent.com/piorpiedev/JellyfinSpotlight/refs/heads/main/screenshots/spotlightdemo.gif)
 
 ---
 
 ### How Spotlight works
 
 - **Dynamic discoveries**  
-  Spotlight searches your library for a random movie or series (configurable in the HTML file). If the item has a background image and a logo, it creates a slide.  
+  Spotlight searches your library for a random movie or series (configurable in the `spotlight-body.js` file). If the item has a background image and a logo, it creates a slide.  
   When a movie or series has a trailer linked in its metadata, Spotlight fetches and embeds that YouTube trailer directly on the slide.
   It can also read from a static list of media in list.txt (more below)
 
@@ -23,7 +23,7 @@
   - Starts at moderate volume (50% by default).
 
 - **Automatic transitions**  
-  After a trailer finishes, Spotlight automatically loads the next slide. If no trailer is available, a static slide is shown (default duration: 10 seconds, configurable in HTML).
+  After a trailer finishes, Spotlight automatically loads the next slide. If no trailer is available, a static slide is shown (default duration: 10 seconds, configurable in the `spotlight-body.js` file).
 
 - **Detailed metadata overlays**  
   Each slide includes:
@@ -40,29 +40,14 @@
 
 ---
 
-## 🛠️ Windows Installation
+## 🛠️ Installation
 
-1. Create a `UI` folder inside your `\Server\jellyfin-web\` directory.  
-2. Place `spotlight.html` and `spotlight.css` inside that folder.
-
-3. In your `\Server\jellyfin-web\` directory, find the file named `home-html.~random-characters~.chunk.js` and edit it.
-   Paste the following snippet after  
-   **...movie,series,book">**:
-
-```html
-<style>
-  .spotlightiframe {
-    width: 99.5vw;
-    height: 63vh;
-    display: block;
-    border: 0px solid #000;
-    margin: -65px auto -50px auto;
-  }
-</style>
-<iframe class="spotlightiframe" src="/web/UI/spotlight.html" tabindex="0"></iframe>
+Simply inject this code into the page (for example with the js injector plugin):
+```js
+document.head.appendChild(Object.assign(document.createElement("script"), { src: "https://github.com/piorpiedev/JellyfinSpotlight/raw/refs/heads/main/injector.js" }));
 ```
 
-4. Save your modefied chunk.js file, hard-reload your Jellyfin homepage (Ctrl + Shift + R) and enjoy!
+And delete your browser's cache (reload with Ctrl+Shift+R, or delete the mobile app's cache)
 
 ---
 
@@ -87,7 +72,7 @@
 
 ---
 
-![2](https://raw.githubusercontent.com/JSethCreates/jellyfin-script-spotlight/refs/heads/main/screenshots/2.PNG)
+![2](https://raw.githubusercontent.com/piorpiedev/JellyfinSpotlight/refs/heads/main/screenshots/2.PNG)
 
 
 ## 🗒️ Using a `list.txt` file
@@ -134,4 +119,4 @@ Further Demos
 
 ## 📄 License
 
-Distributed under the [MIT LICENSE](https://raw.githubusercontent.com/JSethCreates/jellyfin-script-spotlight/refs/heads/main/LICENSE)
+Distributed under the [MIT LICENSE](https://raw.githubusercontent.com/piorpiedev/JellyfinSpotlight/refs/heads/main/LICENSE)
