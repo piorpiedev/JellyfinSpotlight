@@ -21,9 +21,6 @@
     };
 
     const checkAndInject = async () => {
-        // Check if should inject
-        const isHomePage = window.location.href.includes("home") || window.location.href.endsWith("/web/index.html");
-        if (!isHomePage) return;
         const targetSection = await waitForElement(".section0"); // "section0" is usually the "My Media" library row
         if (document.getElementById("spotlight-iframe")) return; // Prevent duplicate injection
         console.log("Spotlight: Injecting Interface...");

@@ -681,8 +681,12 @@ const checkNavigation = () => {
 
     if (newLocation !== currentLocation) {
         currentLocation = newLocation;
-
-        const isHomePage = url => url.endsWith('home.html') || url.endsWith('/web/') || url.endsWith('/web/index.html');
+        const isHomePage = url => url.includes("/web/#/home.html") ||
+            url.includes("/web/#/home") ||
+            url.includes("/web/index.html#/home.html") ||
+            url === "/web/index.html#/home" ||
+            url.endsWith("/web/");
+            
         if (isHomePage(newLocation)) {
             if (!isHomePageActive) {
                 console.log("Returning to homepage, reactivating slideshow");
