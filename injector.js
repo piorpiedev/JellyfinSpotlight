@@ -33,11 +33,11 @@
         
         // Position the iframe in the dashboard
         iframe.style.cssText = `
-            width: 99.5vw;
-            height: 63vh;
+            width: 100%;
+            aspect-ratio: 9/5;
             display: block;
             border: 0;
-            margin: -10px auto -30px auto; 
+            margin: -8.5em auto -30px auto; 
             overflow: hidden;
         `;
 
