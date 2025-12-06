@@ -565,16 +565,16 @@ const startSlideChangeTimer = () => {
 // Check if the user has navigated away from the homepage and handle slideshow accordingly
 const checkNavigation = () => {
     const newLocation = window.top.location.href;
+    const isHomePage = newLocation.includes("/web/#/home.html") ||
+        newLocation.includes("/web/#/home") ||
+        newLocation.includes("/web/index.html#/home.html") ||
+        newLocation === "/web/index.html#/home" ||
+        newLocation.endsWith("/web/");
 
     if (newLocation !== currentLocation) {
         currentLocation = newLocation;
-        const isHomePage = url => url.includes("/web/#/home.html") ||
-            url.includes("/web/#/home") ||
-            url.includes("/web/index.html#/home.html") ||
-            url === "/web/index.html#/home" ||
-            url.endsWith("/web/");
 
-        if (isHomePage(newLocation)) {
+        if (isHomePagenewLocation) {
             if (!isHomePageActive) {
                 console.log("Returning to homepage, reactivating slideshow");
                 isHomePageActive = true;
@@ -582,7 +582,9 @@ const checkNavigation = () => {
                 fetchRandomMovie();
                 attachButtonListeners();
             }
-        } else if (isHomePageActive) {
+            return
+        }
+        if (isHomePageActive) {
             console.log("Leaving homepage, shutting down slideshow");
             shutdown();
             // setTimeout(function () {
@@ -594,7 +596,19 @@ const checkNavigation = () => {
             //     load on home not navback. Meh, lesser of two evils;
             //     True SPA headache... */
             // }, 500);
+            return;
         }
+        return;
+    }
+
+    // navback
+    if (isHomePage && !document.getElementById("spotlight-iframe")) {
+        console.log("Returning to homepage, reactivating slideshow");
+        isHomePageActive = true;
+        cleanup();
+        fetchRandomMovie();
+        attachButtonListeners();
+        return;
     }
 };
 
