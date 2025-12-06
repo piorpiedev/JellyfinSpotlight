@@ -35,6 +35,7 @@
         iframe.style.cssText = `
             width: 100%;
             min-height: 75vh;
+            max-height: 85vh;
             aspect-ratio: 7/4;
             display: block;
             border: 0;
