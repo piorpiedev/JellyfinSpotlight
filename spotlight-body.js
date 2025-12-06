@@ -130,31 +130,13 @@ const updateSlideButtons = () => {
     const leftBtn = document.getElementById('leftButton');
     if (leftBtn) {
         const canGoBack = historyIndex > 0;
-        leftBtn.disabled = !canGoBack; // actually set property
-        leftBtn.removeAttribute('disabled'); // ensure DOM attribute is gone
+        leftBtn.disabled = !canGoBack;
+        leftBtn.removeAttribute('disabled'); // Fix browser ignore
         
         leftBtn.style.opacity = canGoBack ? '1' : '0.3';
         leftBtn.style.cursor = canGoBack ? 'pointer' : 'default';
         leftBtn.style.pointerEvents = canGoBack ? 'auto' : 'none';
     }
-};
-
-// Check if backdrop and logo images exist for the movie, then create the slide or fetch the next movie
-const checkBackdropAndLogo = movie => {
-    Promise.all(['/Images/Backdrop/0', '/Images/Logo'].map(url =>
-        fetch(`/Items/${movie.Id}${url}`, { method: 'HEAD' }).then(response => response.ok)
-    )).then(([backdropExists, logoExists]) => {
-        if (backdropExists && logoExists) {
-            console.log(`Backdrop and logo exist for movie: ${movie.Name}`);
-            createSlideElement(movie, true);
-        } else {
-            console.log(`Backdrop or logo missing for movie: ${movie.Name}. Fetching next movie.`);
-            fetchNextMovie();
-        }
-    }).catch(error => {
-        console.error("Error checking backdrop and logo:", error);
-        fetchNextMovie();
-    });
 };
 
 async function checkLocalTrailer(itemId) {
@@ -248,11 +230,12 @@ const createSlideElement = async (movie) => {
     playBtn.innerHTML = '<span class="material-icons">play_arrow</span> Play';
     playBtn.onclick = (e) => { 
         e.stopPropagation();
-        if (window.top.require) {
-            window.top.require(['playbackManager'], (pm) => pm.play({ ids: [movie.Id] }));
-        } else if (window.top.Emby && window.top.Emby.PlaybackManager) {
-            window.top.Emby.PlaybackManager.play({ ids: [movie.Id] });
-        } else {
+        try {
+            // Construct deep link for playback
+            // Standard Web client format: #/play?ids=ITEM_ID
+            window.top.location.hash = `/play?ids=${movie.Id}`;
+        } catch (err) {
+            console.error("Deep link failed, falling back to item page", err);
             window.top.Emby.Page.showItem(movie.Id);
         }
     };
@@ -413,58 +396,86 @@ const fetchRandomMovie = () => {
 };
 
 const fetchNextMovie = () => {
-    if (isFetching) return; // Block double-clicks or race conditions
-    isFetching = true;
-
-    // 1. History Navigation
+    // A. Check History
     if (historyIndex < historyList.length - 1) {
         historyIndex++;
-        console.log("History Forward to index:", historyIndex);
         createSlideElement(historyList[historyIndex]);
-        isFetching = false;
         return;
     }
 
-    // 2. Buffer Navigation
+    // B. Check Buffer
     if (preloadedMovie) {
         addToHistory(preloadedMovie);
         createSlideElement(preloadedMovie);
-        
         preloadedMovie = null;
         preloadedImage = null;
-        isFetching = false;
-        
-        preloadNextMovie(); // Start buffering next
+        preloadNextMovie();
         return;
     }
 
-    // 3. Cold Fetch
+    // C. Cold Fetch
     const uid = fallbackUserId;
     const itemTypes = moviesSeriesBoth === 1 ? 'Movie' : (moviesSeriesBoth === 2 ? 'Series' : 'Movie,Series');
     
-    fetch(`/Users/${uid}/Items?IncludeItemTypes=${itemTypes}&Recursive=true&Limit=1&SortBy=random&Fields=Id,Overview,RemoteTrailers,PremiereDate,RunTimeTicks,ChildCount,Title,Type,Genres,OfficialRating,CommunityRating&api_key=${token}`)
+    // Added MinCommunityRating=4
+    fetch(`/Users/${uid}/Items?IncludeItemTypes=${itemTypes}&MinCommunityRating=4&Recursive=true&Limit=1&SortBy=random&Fields=Id,Overview,RemoteTrailers,PremiereDate,RunTimeTicks,ChildCount,Title,Type,Genres,OfficialRating,CommunityRating&api_key=${token}`)
         .then(r => r.json())
         .then(d => { 
             if (d.Items?.[0]) {
-                const mov = d.Items[0];
-                addToHistory(mov);
-                createSlideElement(mov);
+                validateAndLoad(d.Items[0]);
+            } else {
+                console.error("No movies found with Rating >= 4.");
             }
-            isFetching = false;
-            preloadNextMovie(); 
         })
-        .catch(e => {
-            console.error("Fetch failed:", e);
-            isFetching = false;
-        });
+        .catch(e => setTimeout(fetchNextMovie, 2000));
 };
 
 const navigatePrevious = () => {
     if (historyIndex > 0) {
         historyIndex--;
-        console.log("History Back to index:", historyIndex);
+        console.log("History Back:", historyList[historyIndex].Name);
         createSlideElement(historyList[historyIndex]);
     }
+};
+
+const validateAndLoad = (movie) => {
+    // We need both to load successfully
+    let backdropLoaded = false;
+    let logoLoaded = false;
+    let failed = false;
+
+    const checkDone = () => {
+        if (failed) return; // Already skipped
+        if (backdropLoaded && logoLoaded) {
+            addToHistory(movie);
+            createSlideElement(movie);
+            preloadNextMovie(); 
+        }
+    };
+
+    // Check Backdrop
+    const imgBack = new Image();
+    imgBack.onload = () => { backdropLoaded = true; checkDone(); };
+    imgBack.onerror = () => { 
+        if (!failed) {
+            failed = true;
+            console.warn(`Skipping "${movie.Name}" - No Backdrop.`);
+            fetchNextMovie();
+        }
+    };
+    imgBack.src = `/Items/${movie.Id}/Images/Backdrop/0`;
+
+    // Check Logo
+    const imgLogo = new Image();
+    imgLogo.onload = () => { logoLoaded = true; checkDone(); };
+    imgLogo.onerror = () => { 
+        if (!failed) {
+            failed = true;
+            console.warn(`Skipping "${movie.Name}" - No Logo.`);
+            fetchNextMovie();
+        }
+    };
+    imgLogo.src = `/Items/${movie.Id}/Images/Logo`;
 };
 
 // New Function: Fetch a movie silently in the background
@@ -473,36 +484,52 @@ const preloadNextMovie = () => {
     if (!token || !uid) return;
     const itemTypes = moviesSeriesBoth === 1 ? 'Movie' : (moviesSeriesBoth === 2 ? 'Series' : 'Movie,Series');
     
-    // Fetch 1 random item
     fetch(`/Users/${uid}/Items?IncludeItemTypes=${itemTypes}&Recursive=true&Limit=1&SortBy=random&Fields=Id,Overview,RemoteTrailers,PremiereDate,RunTimeTicks,ChildCount,Title,Type,Genres,OfficialRating,CommunityRating&api_key=${token}`)
         .then(r => r.json())
         .then(data => {
             if (data.Items?.[0]) {
                 const mov = data.Items[0];
-                // Check Backdrop existence
-                const img = new Image();
-                img.onload = () => {
-                    preloadedMovie = mov;
-                    preloadedImage = img; // Keep ref so garbage collector doesn't kill it
-                    console.log("Buffered:", mov.Name);
+                // Validate Buffer
+                const imgBack = new Image();
+                const imgLogo = new Image();
+                let bOk = false, lOk = false;
+
+                const tryCache = () => {
+                    if (bOk && lOk) {
+                        preloadedMovie = mov;
+                        preloadedImage = imgBack; 
+                        console.log("Buffered Next:", mov.Name);
+                    }
                 };
-                img.onerror = () => {
-                    console.log("Bad backdrop, skipping:", mov.Name);
-                    preloadNextMovie(); // Retry immediately
-                };
-                img.src = `/Items/${mov.Id}/Images/Backdrop/0`;
+
+                imgBack.onload = () => { bOk = true; tryCache(); };
+                imgBack.onerror = () => { console.log("Preload fail: No Backdrop", mov.Name); preloadNextMovie(); };
+                imgBack.src = `/Items/${mov.Id}/Images/Backdrop/0`;
+
+                imgLogo.onload = () => { lOk = true; tryCache(); };
+                imgLogo.onerror = () => { console.log("Preload fail: No Logo", mov.Name); preloadNextMovie(); };
+                imgLogo.src = `/Items/${mov.Id}/Images/Logo`;
             }
         });
 };
 
 const addToHistory = (movie) => {
-    historyList.push(movie);
-    historyIndex = historyList.length - 1;
-
-    // Limit to 30
-    if (historyList.length > 30) {
-        historyList.shift();
-        historyIndex--; 
+    // Only add if we are at the end of the stack
+    if (historyIndex === historyList.length - 1) {
+        historyList.push(movie);
+        historyIndex++;
+        // Limit Stack
+        if (historyList.length > 30) {
+            historyList.shift();
+            historyIndex--;
+        }
+    } else {
+        // Edge case: If user went back 5 times, then clicked "Random/Next" (not Forward),
+        // we usually branch off a new history. 
+        // For simplicity here, we just wipe the forward history and append.
+        historyList = historyList.slice(0, historyIndex + 1);
+        historyList.push(movie);
+        historyIndex++;
     }
 };
 
