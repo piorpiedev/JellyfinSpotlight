@@ -120,7 +120,7 @@ body {
   gap: 1rem;
   z-index: 10;
   text-shadow: 2px 2px 4px rgba(0,0,0,0.9);
-  pointer-events: none; /* Let clicks pass through to video */
+  pointer-events: auto !important;
 
   opacity: 1;
   /* Transition: When removing the fade class, come back quickly (0.5s) */
