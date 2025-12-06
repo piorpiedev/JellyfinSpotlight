@@ -71,7 +71,7 @@ async function buildAndCopy() {
     iframe.id = "spotlight-iframe";
     iframe.className = "spotlightiframe";
     iframe.tabIndex = 0;
-    iframe.style.cssText = "width: 100%; aspect-ratio: 9/5; display: block; border: 0; margin: -8.5em auto -30px auto; overflow: hidden;";
+    iframe.style.cssText = "width: 100%; aspect-ratio: 7/4; display: block; border: 0; margin: -8.5em auto -30px auto; overflow: hidden;";
     
     targetSection.parentNode.insertBefore(iframe, targetSection);
     

@@ -68,30 +68,14 @@ body {
   position: absolute;
   top: 0;
   left: 0;
-  width: 100%;
-  height: calc(100% - 50px);
+  width: 100% !important; /* Force full width */
+  height: 100%;
   object-fit: cover;
-  object-position: center 25%;
-  border-radius: 5px;
+  object-position: 75% center; /* Focus on the right side */
   z-index: 1;
-  transition: width 0.3s ease;
-
-  /* Shading */
-  -webkit-mask-image: linear-gradient(to right,
-      rgba(0,0,0,1) 0%,    /* solid at left */
-      rgba(0,0,0,1) 65%,   /* hold solid for most */
-      rgba(0,0,0,0) 100%   /* fade out on right */
-  );
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-size: cover;
-
-  mask-image: linear-gradient(to right,
-      rgba(0,0,0,1) 0%,
-      rgba(0,0,0,1) 65%,
-      rgba(0,0,0,0) 100%
-  );
-  mask-repeat: no-repeat;
-  mask-size: cover;
+  transition: opacity 0.5s ease; /* Smooth fade when video starts */
+  mask-image: none !important; /* Remove the old fade mask */
+  -webkit-mask-image: none !important;
 }
 
 /* Heading */
@@ -114,88 +98,128 @@ body {
 }
 
 /* Video Container */
-.video-container {
+.video-container, .video-player {
   position: absolute;
-  right: 0;
-  bottom: 50px;
-  width: 0;
-  height: calc(100% - 50px);
-  overflow: hidden;
-  z-index: 0;
-  transition: width 0.3s ease;
-}
-
-/* Video Player */
-.video-player {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
+  top: 0; 
+  left: 0; 
+  width: 100%; 
   height: 100%;
+  z-index: 0;
+  transform: scale(1.1); /* Zooming it a bit to remove the title */
 }
 
 /* Text Container with stacked logo + metadata + plot */
 .text-container {
   position: absolute;
-  bottom: 4.5em;
-  left: 2vw;
-  max-width: 60vw;
+  bottom: 8vw; /* Matches the left spacing (approx) + a little bit */
+  left: 4vw;
+  max-width: 30vw; /* Reduced width */
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.8em;
-  z-index: 12;
+  gap: 1rem;
+  z-index: 10;
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.9);
+  pointer-events: none; /* Let clicks pass through to video */
+
+  opacity: 1;
+  /* Transition: When removing the fade class, come back quickly (0.5s) */
+  transition: opacity 0.5s ease-out; 
+}
+.text-container.fade-out {
+  opacity: 0;
+  /* Transition: Fade out slowly over 5 seconds */
+  transition: opacity 12s ease-in-out; 
+}
+.text-container:hover {
+  opacity: 1 !important;
+  transition: opacity 0.3s ease-out;
+}
+
+.text-container button {
+  pointer-events: auto;
 }
 
 /* Logo inside text stack */
 .text-container .logo {
-  position: static !important;
-  max-height: 30vh;
-  max-width: 40vw;
-  width: auto;
-  opacity: 1;
+  max-width: 35vw;
+  max-height: 25vh;
+  margin-left: 0 !important; /* Reset old centering */
+  transform: none !important; /* Reset old hover effects */
   align-self: flex-start;
-  margin-left: 20vw;
-  transform: translateX(-50%);
-  filter: drop-shadow(1px 1px 1px);
-  text-shadow: -2px 2px 4px rgba(0, 0, 0, 0.5);
-  transition: transform 5.5s ease-in-out, opacity 5.5s ease-in-out;
 }
 
 /* Metadata bar */
+/* Update: Metadata Row - Small, Bold, Caps, White */
 .text-container .lorem-ipsum {
-  position: static !important;
-  margin: 0;
-  max-width: 45vw;
-  font-family: "Titillium Web", sans-serif;
-  font-size: 1.2em;
-  font-weight: 400;
-  line-height: 1.8em;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
   color: #f5f5f5;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.85))
-          drop-shadow(0 6px 10px rgba(0, 0, 0, 0.7));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: -5px;
+  margin-top: 15px;
+  text-shadow: 1px 1px 2px rgba(0,0,0,1);
+}
+
+/* Fallback Title text when Logo is missing */
+.text-container h1.title-text {
+  font-family: 'Inter', sans-serif;
+  font-weight: 900;
+  font-size: 3.5rem;
+  line-height: 1.1;
+  color: #fff;
+  margin: 0 0 10px 0;
+  text-transform: uppercase;
+  text-shadow: 2px 2px 10px rgba(0,0,0,0.8);
+  max-width: 100%;
+}
+
+/* Force Navigation Arrows to be visible and clickable */
+#leftButton, #rightButton {
+  display: flex !important;
+  opacity: 1 !important;
+  z-index: 10000 !important;
+  cursor: pointer !important;
+  background: rgba(0,0,0,0.5) !important; /* Semi-transparent backing so you can see them */
+  border-radius: 50% !important;
+  width: 50px !important;
+  height: 50px !important;
+  align-items: center;
+  justify-content: center;
+  position: fixed !important;
+  top: 50% !important;
+  transform: translateY(-50%);
+}
+
+#leftButton { left: 10px !important; }
+#rightButton { right: 10px !important; }
+
+/* Ensure icons inside arrows are visible */
+#leftButton .material-icons, #rightButton .material-icons {
+  font-size: 2rem !important;
+  color: white !important;
+  display: block !important;
 }
 
 /* Plot text */
 .text-container .plot {
-  position: static !important;
-  font-family: "Inter", sans-serif;
-  font-size: 1.2em;
-  font-weight: 500;
-  line-height: 1.3em;
-  color: #f1f1f1;
-  max-width: 45vw;
+  font-family: 'Inter', sans-serif;
+  font-size: 1.1rem;
+  line-height: 1.4;
+  color: #fff;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 5; /* Limit to 5 lines */
   -webkit-box-orient: vertical;
   overflow: hidden;
+  max-height: none;
   text-overflow: ellipsis;
   white-space: normal;
-  filter: drop-shadow(0 5px 7px rgba(0, 0, 0, 0.9))
-          drop-shadow(0 7px 12px rgba(0, 0, 0, 0.75));
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.5); /* Basic shadow */
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.9)); /* Deep shadow for video overlay */
 }
 
 .text-container .lorem-ipsum,
@@ -205,6 +229,50 @@ body {
   text-overflow: ellipsis;
   max-width: 100%;
 }
+
+
+.visual-wrapper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.2) 50%, transparent 100%);
+  z-index: 1; 
+  pointer-events: none;
+}
+
+/* Hide the old bullet separators */
+.bullet-separator { display: none !important; }
+
+/* Hero Buttons Container */
+.hero-buttons {
+  display: flex;
+  gap: 1rem;
+  margin-top: 10px;
+}
+
+/* Hero Button Styles */
+.btn-hero {
+  border: none;
+  border-radius: 4px;
+  padding: 0.8rem 2rem;
+  font-size: 1.2rem;
+  font-weight: bold;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: transform 0.2s;
+  z-index: 20;
+}
+.btn-hero:hover { transform: scale(1.05); }
+
+/* Play Button (White) */
+.btn-play { background-color: white; color: black; }
+
+/* Info Button (Translucent Gray) */
+.btn-info { background-color: rgba(109, 109, 110, 0.7); color: white; }
+.btn-info:hover { background-color: rgba(109, 109, 110, 0.4); }
 
 .bullet-separator {
   margin: 0 5px;
@@ -225,12 +293,51 @@ body {
   cursor: pointer;
 }
 
+#navButtons, #leftButton, #rightButton {
+  z-index: 9999 !important;
+}
+
+/* Transparent overlay to catch clicks on the video for Pausing */
+.video-click-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 5; /* Above video, below text */
+  cursor: pointer;
+}
+
+/* Netflix-style Age Rating Box (Bottom Right) */
+.age-rating-box {
+  position: absolute;
+  bottom: 20vh;
+  right: 0;
+  background-color: rgba(51, 51, 51, 0.6);
+  border-left: 3px solid #dcdcdc;
+  padding: 0.5rem 1rem 0.5rem 0.8rem;
+  color: white;
+  font-family: 'Inter', sans-serif;
+  font-size: 1.1rem;
+  z-index: 20;
+}
+
 /* Star Icon */
 .star-icon {
   font-size: 1em;
   margin-right: 0;
   color: gold;
   vertical-align: middle;
+}
+
+.star-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.star-rating .material-icons {
+  color: gold; 
+  font-size: 1.1em;
 }
 
 /* Emby Scroll Buttons */
@@ -289,21 +396,24 @@ body {
 
 /* Volume Control */
 #volumeButton {
-  position: relative;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important; /* Remove focus ring */
+  color: white !important;
+  padding: 8px;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0.3em;
-  background: none;
-  border: 1px solid var(--md-sys-color-outline);
-  background-color: var(--md-sys-color-primary-container);
-  color: var(--md-sys-color-on-primary-container);
-  cursor: pointer;
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  opacity: 0.7; /* Default transparency */
+  transition: opacity 0.2s;
 }
-
-#volumeButton .material-icons {
-  font-size: 0.9em;
-  margin: 0 0.15em;
+#volumeButton .material-icons { 
+  font-size: 1.5rem !important; 
+  color: white !important;
 }
 
 /* Invisible hover bridge */
@@ -320,7 +430,7 @@ body {
 /* Slider */
 #volumeSlider {
   position: absolute;
-  bottom: 320%; /* fully above the button */
+  bottom: 245%;
   left: 50%;
   transform: translateX(-50%) rotate(-90deg);
   width: 110px;
@@ -480,7 +590,7 @@ body {
   right: 1em;
   display: flex;
   z-index: 2;
-  background: #202020;
+  /* background: #202020; */
   border-radius: 9999px;
 }
 
@@ -544,16 +654,6 @@ body {
 #leftButton {
   border-radius: 9999px 0 0 9999px;
 }
-#mediaButton,
-#playPauseButton {
-  border-radius: 0;
-  font-size: 1.5em !important;
-}
-#mediaButton .material-icons {
-  font-size: 0.8em !important;
-  margin: 0 0.15em;
-}
-
 #rightButton {
   border-radius: 0 9999px 9999px 0;
 }
@@ -604,8 +704,62 @@ body {
 #rightButton .material-icons { font-size: 2rem; pointer-events: none; }
 
 /* The pill keeps only the middle buttons */
-#navButtons #mediaButton { border-radius: 9999px 0 0 9999px !important; }
-#navButtons #volumeButton { border-radius: 0 9999px 9999px 0 !important; }
+/* --- Volume Button (Hidden by default) --- */
+#navButtons #volumeButton {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  width: 40px !important; 
+  height: 40px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  position: relative;
+  
+  /* Hiding state */
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity 0.3s ease-in-out;
+}
+
+/* Class to show it when video plays */
+#navButtons #volumeButton.visible {
+  opacity: 0.7 !important;
+  pointer-events: auto !important;
+}
+#navButtons #volumeButton.visible:hover {
+  opacity: 1 !important;
+}
+
+#navButtons #volumeButton::after {
+  display: none !important;
+  content: none !important;
+}
+/* Add invisible padding around the button */
+#navButtons #volumeButton::before {
+  content: '';
+  position: absolute;
+  top: -15px;
+  bottom: -15px;
+  left: -15px;
+  right: -15px;
+  background: transparent;
+  border-radius: 50%;
+  z-index: -1;
+}
+
+#navButtons #volumeButton:hover {
+  background: transparent !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+/* Icon style */
+#navButtons #volumeButton .material-icons {
+  font-size: 1.6rem !important;
+  color: white !important;
+}
 
 #navButtons #leftButton:hover,
 #navButtons #rightButton:hover {
@@ -621,15 +775,18 @@ body {
     height: 40px;
   }
 
-  #playPauseButton,
-  #volumeButton {
-    display: none !important;
-  }
 
-  /* Info button becomes the only pill in the group */
-  #navButtons #mediaButton {
-    border-radius: 9999px !important; /* fully rounded both sides */
-    border-left: 1px solid var(--md-sys-color-outline) !important;
-    border-right: 1px solid var(--md-sys-color-outline) !important;
-  }
+#leftButton, #rightButton {
+  display: flex !important;
+  opacity: 1 !important;
+  z-index: 99999 !important;
+  cursor: pointer !important;
+  background: rgba(0,0,0,0.5) !important;
+  border-radius: 50% !important;
+  width: 50px !important; height: 50px !important;
+  align-items: center; justify-content: center;
+  position: fixed !important; top: 50% !important; transform: translateY(-50%);
 }
+#leftButton { left: 15px !important; }
+#rightButton { right: 15px !important; }
+#leftButton .material-icons, #rightButton .material-icons { font-size: 2rem !important; color: white !important; }

@@ -1,13 +1,21 @@
 // Initialize global variables
 let customTitle = '';
-let moviesSeriesBoth = 3, shuffleInterval = 10000, plotMaxLength = 450, useTrailers = true;
+let moviesSeriesBoth = 3, shuffleInterval = 10000, plotMaxLength = 600, useTrailers = true;
 let isChangingSlide = false, player = null, slideChangeTimeout = null, isHomePageActive = false, navigationInterval = null;
 let currentLocation = window.top.location.href;
 let movieList = [], currentMovieIndex = 0, lastMovie = null, currentMovie = null, currentSlideElement = null;
 let localTrailerIframe = null;
 let globalVolume = Number(localStorage.getItem('spotlightVolume') ?? 0.5);
 
-//Get User Auth token
+let historyList = [];       // Stores movie objects
+let historyIndex = -1;      // Points to current movie in history
+let preloadedMovie = null;
+let preloadedImage = null;
+let isHovering = false;
+let isFetching = false;
+let trailerHoverTimeout = null;
+
+// Get User Auth token
 const getJellyfinAuth = () => {
     let token = null;
     let userId = null;
@@ -75,11 +83,20 @@ const cleanup = () => {
         localTrailerIframe = null;
         console.log("Local trailer iframe removed.");
     }
+    document.querySelectorAll(".video-container").forEach(e => e.remove())
     if (slideChangeTimeout) {
         clearTimeout(slideChangeTimeout);
         slideChangeTimeout = null;
         console.log("Slide change timeout cleared.");
     }
+    if (trailerHoverTimeout) {
+        clearTimeout(trailerHoverTimeout);
+        trailerHoverTimeout = null;
+        console.log("Slide change timeout cleared.");
+    }
+
+    const txt = document.querySelector('.text-container');
+    if (txt) txt.classList.remove('fade-out');
 };
 
 // Shut down the slideshow by cleaning up and resetting variables
@@ -100,11 +117,26 @@ const shutdown = () => {
     console.log("Slideshow has been completely shutdown");
 };
 
+const updateVolumeButtonVisibility = (show) => {
+    const btn = document.getElementById('volumeButton');
+    if (btn) {
+        if (show) btn.classList.add('visible');
+        else btn.classList.remove('visible');
+    }
+};
+
 // Update the state of navigation buttons based on the current and last movie
 const updateSlideButtons = () => {
-    const leftButton = document.getElementById('leftButton');
-    leftButton.disabled = !lastMovie || (currentMovie && lastMovie.Id === currentMovie.Id);
-    console.log(`Left button disabled: ${leftButton.disabled}`);
+    const leftBtn = document.getElementById('leftButton');
+    if (leftBtn) {
+        const canGoBack = historyIndex > 0;
+        leftBtn.disabled = !canGoBack; // actually set property
+        leftBtn.removeAttribute('disabled'); // ensure DOM attribute is gone
+        
+        leftBtn.style.opacity = canGoBack ? '1' : '0.3';
+        leftBtn.style.cursor = canGoBack ? 'pointer' : 'default';
+        leftBtn.style.pointerEvents = canGoBack ? 'auto' : 'none';
+    }
 };
 
 // Check if backdrop and logo images exist for the movie, then create the slide or fetch the next movie
@@ -149,408 +181,193 @@ async function checkLocalTrailer(itemId) {
 }
 
 // Create and display a new slide element for the given movie
-const createSlideElement = async (movie, hasVideo = false) => {
-    cleanup();
+const createSlideElement = async (movie) => {
+    cleanup(); // Clean previous iframe
+    
+    // Note: We do NOT reset isHovering here. 
+    // If the mouse is already there (e.g. clicked Next), we stay hovering.
+    
+    updateVolumeButtonVisibility(false);
+    if (trailerHoverTimeout) clearTimeout(trailerHoverTimeout);
+
     const container = document.getElementById('slides-container');
     const newSlide = createElem('div', 'slide');
-    newSlide.appendChild(createElem('div', 'slide-mat'));
 
+    // 1. Visuals
     const visualWrapper = createElem('div', 'visual-wrapper');
-    visualWrapper.appendChild(createElem('img', 'backdrop', null, `/Items/${movie.Id}/Images/Backdrop/0`, 'backdrop'));
-
-    const hoverZone = createElem('div', 'logo-hover-zone');
-    hoverZone.setAttribute('role', 'button');
-    hoverZone.setAttribute('aria-label', 'View Movie Details');
-    hoverZone.onclick = () => window.top.Emby.Page.showItem(movie.Id);
-    hoverZone.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-            window.top.Emby.Page.showItem(movie.Id);
-        }
-    });
-
-    // Hover effects via JS for logo
-    hoverZone.addEventListener("mouseenter", () => {
-        const logo = textContainer.querySelector('.logo');
-        if (logo) {
-            logo.style.transformOrigin = "center center";
-            logo.style.transition = "transform 5s ease-in-out, opacity 5s ease-in-out";
-            logo.style.transform = "translateX(-50%) scale(1.2)";
-            logo.style.opacity = "0.1";
-        }
-    });
-
-    hoverZone.addEventListener("mouseleave", () => {
-        const logo = textContainer.querySelector('.logo');
-        if (logo) {
-            logo.style.transition = "transform 5s ease-in-out, opacity 5s ease-in-out";
-            logo.style.transform = "translateX(-50%) scale(1)";
-            logo.style.opacity = "1";
-        }
-    });
-
-    visualWrapper.appendChild(hoverZone);
-
+    const backdropImg = createElem('img', 'backdrop', null, `/Items/${movie.Id}/Images/Backdrop/0`, 'backdrop');
+    visualWrapper.appendChild(backdropImg);
     newSlide.appendChild(visualWrapper);
 
+    // 2. Rating & Metadata
+    const getCleanRating = (r) => {
+        if (!r) return null;
+        r = r.toUpperCase();
+        if (['TV-MA', 'NC-17', 'R', '18', 'VM18'].some(x => r.includes(x))) return '18+';
+        if (['16', 'VM16'].some(x => r.includes(x))) return '16+';
+        if (['PG-13', 'TV-14', '14', 'VM14'].some(x => r.includes(x))) return '14+';
+        if (['PG', 'TV-PG', '12', '10'].some(x => r.includes(x))) return '12+';
+        return null;
+    };
+    const cleanRating = getCleanRating(movie.OfficialRating);
+    if (cleanRating) {
+        const ratingBox = createElem('div', 'age-rating-box');
+        ratingBox.textContent = cleanRating;
+        newSlide.appendChild(ratingBox);
+    }
+
     const textContainer = createElem('div', 'text-container');
+    const logoImg = new Image();
+    logoImg.src = `/Items/${movie.Id}/Images/Logo`;
+    logoImg.onload = () => textContainer.prepend(createElem('img', 'logo', null, logoImg.src, 'logo'));
+    logoImg.onerror = () => {
+        const titleEl = document.createElement('h1');
+        titleEl.className = 'title-text';
+        titleEl.textContent = movie.Name;
+        textContainer.prepend(titleEl);
+    };
 
-    textContainer.appendChild(createElem('img', 'logo', null, `/Items/${movie.Id}/Images/Logo`, 'logo'));
+    const year = movie.PremiereDate ? new Date(movie.PremiereDate).getFullYear() : '';
+    const genres = movie.Genres ? movie.Genres.slice(0, 2).join(', ') : '';
+    const duration = movie.RunTimeTicks ? Math.round(movie.RunTimeTicks / 600000000) + 'm' : '';
+    const commRating = movie.CommunityRating ? movie.CommunityRating.toFixed(1) : '';
 
-    const premiereYear = movie.PremiereDate ? new Date(movie.PremiereDate).getFullYear() : 'Unknown';
-    const additionalInfo = movie.Type === 'Series' ? (movie.ChildCount ? `${movie.ChildCount} Season${movie.ChildCount > 1 ? 's' : ''}` : 'Unknown Seasons') : (movie.RunTimeTicks ? `${Math.round(movie.RunTimeTicks / 600000000)} min` : 'Unknown Runtime');
-
-    const communityRating = movie.CommunityRating ? movie.CommunityRating.toFixed(1) : '–';
-    const genres = Array.isArray(movie.Genres) && movie.Genres.length
-        ? movie.Genres.slice(0, 2).join(', ')
-        : 'Genre';
-    const officialRating = movie.OfficialRating || 'NR';
-    const year = movie.PremiereDate ? new Date(movie.PremiereDate).getFullYear() : '–';
-    const durationOrSeasons = movie.Type === 'Series'
-        ? (movie.ChildCount ? `${movie.ChildCount} Season${movie.ChildCount > 1 ? 's' : ''}` : '–')
-        : (movie.RunTimeTicks ? `${Math.round(movie.RunTimeTicks / 600000000)} min` : '–');
-
-    const loremText = `
-			  <span style="display:inline-flex; align-items:center; gap:12px; vertical-align:middle; flex-wrap:wrap;">
-
-				<span style="display:inline-flex; align-items:center; gap:4px;">
-				  <img src="https://upload.wikimedia.org/wikipedia/commons/6/69/IMDB_Logo_2016.svg" alt="IMDb" style="height:1.05em; margin-right:10px;">
-				  <span>${communityRating}</span>
-				  <span class="material-icons star-icon" style="font-size:1em; transform: translateY(-2px);">star</span>
-				</span>
-
-				<span class="bullet-separator">•</span>
-
-				<span style="display:inline-flex; align-items:center; gap:4px;">
-				  <span class="material-icons" style="font-size:1em;">theater_comedy</span>
-				  <span>${genres}</span>
-				</span>
-
-				<span class="bullet-separator second-bullet">•</span>
-
-				<span style="background:#fff; color:#3d3c3c; padding:4px 12px 3px 12px; border-radius:8px; font-weight:550; font-size:0.78em; font-family:'Titillium Web', sans-serif; line-height:1em;">
-				  ${officialRating}
-				</span>
-
-				<span class="bullet-separator">•</span>
-
-				<span style="display:inline-flex; align-items:center; gap:4px;">
-				  <span class="material-icons" style="font-size:1em;">
-					${movie.Type === 'Series' ? 'calendar_today' : 'schedule'}
-				  </span>
-				  <span>${durationOrSeasons}</span>
-				</span>
-
-				<span class="bullet-separator">•</span>
-				<span>${year}</span>
-
-			  </span>
-			`;
+    let metaHTML = ``;
+    if (commRating) metaHTML += `<span class="star-rating"><span class="material-icons">star</span> ${commRating}</span>`;
+    if (year) metaHTML += `<span>${year}</span>`;
+    if (duration) metaHTML += `<span>${duration}</span>`;
+    if (genres) metaHTML += `<span>${genres}</span>`;
 
     const loremDiv = createElem('div', 'lorem-ipsum');
-    loremDiv.innerHTML = loremText;
-
+    loremDiv.innerHTML = metaHTML;
     textContainer.appendChild(loremDiv);
     textContainer.appendChild(createElem('div', 'plot', truncateText(movie.Overview, plotMaxLength)));
 
+    const btnContainer = createElem('div', 'hero-buttons');
+    const playBtn = createElem('button', 'btn-hero btn-play');
+    playBtn.innerHTML = '<span class="material-icons">play_arrow</span> Play';
+    playBtn.onclick = (e) => { 
+        e.stopPropagation();
+        if (window.top.require) {
+            window.top.require(['playbackManager'], (pm) => pm.play({ ids: [movie.Id] }));
+        } else if (window.top.Emby && window.top.Emby.PlaybackManager) {
+            window.top.Emby.PlaybackManager.play({ ids: [movie.Id] });
+        } else {
+            window.top.Emby.Page.showItem(movie.Id);
+        }
+    };
+    const infoBtn = createElem('button', 'btn-hero btn-info');
+    infoBtn.innerHTML = '<span class="material-icons">info_outline</span> More Info';
+    infoBtn.onclick = (e) => { e.stopPropagation(); window.top.Emby.Page.showItem(movie.Id); };
+    
+    btnContainer.appendChild(playBtn);
+    btnContainer.appendChild(infoBtn);
+    textContainer.appendChild(btnContainer);
     newSlide.appendChild(textContainer);
 
-    const fadeDiv = createElem('div', 'bottom-fade');
+    // 3. Define Trailer Logic (But don't attach listeners to Slide anymore)
+    const startTrailer = async () => {
+        if (!useTrailers) return;
+        
+        // Wait for async check, then verify hover again
+        const localData = await checkLocalTrailer(movie.Id);
+        if (!isHovering) return; 
+        if (newSlide.querySelector('.video-container')) return;
 
-    let localTrailerInfo = null;
-    let hasLocalTrailer = false;
+        const videoContainer = createElem('div', 'video-container');
+        const clickOverlay = createElem('div', 'video-click-overlay');
+        Object.assign(clickOverlay.style, { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 999, cursor: 'pointer', background: 'transparent' });
+        videoContainer.appendChild(clickOverlay);
 
-    if (useTrailers) {
-        localTrailerInfo = await checkLocalTrailer(movie.Id);
-        hasLocalTrailer = !!localTrailerInfo;
-        console.log(
-            hasLocalTrailer ? "✅ Local trailer exists:" : "❌ No local trailer. Proceeding to Remote/YouTube…",
-            localTrailerInfo
-        );
-    }
-    // Local Trailer playback
-    if (useTrailers && hasLocalTrailer) {
-        const { trailer, streamUrl } = localTrailerInfo;
-        const mediaSourceId = trailer.MediaSources?.[0]?.Id;
-        const finalUrl = mediaSourceId
-            ? `/Videos/${trailer.Id}/stream.mp4?Static=true&mediaSourceId=${mediaSourceId}&api_key=${token}`
-            : streamUrl; // fallback from the checker
+        let videoAdded = false;
 
-        const videoContainer = createElem('div', 'video-container', null, null, 'Local Trailer');
-        const iframe = document.createElement('iframe');
-        iframe.className = 'local-trailer-frame';
-        iframe.allow = 'autoplay';
-        iframe.setAttribute('aria-label', 'Local Trailer');
+        if (localData) {
+            const { trailer, streamUrl } = localData;
+            const iframe = document.createElement('iframe');
+            iframe.className = 'local-trailer-frame';
+            iframe.allow = 'autoplay';
+            iframe.style.border = '0';
+            iframe.srcdoc = `
+                <style>body{margin:0;background:#000;overflow:hidden;}video{width:100%;height:100%;object-fit:cover;}</style>
+                <video id="v" autoplay src="${streamUrl}"></video>
+                <script>
+                    const v=document.getElementById('v');
+                    v.volume=${globalVolume};
+                    v.onended = () => parent.postMessage('local-trailer-ended', '*');
+                    window.addEventListener('message', e => { if(e.data==='toggle') v.paused?v.play():v.pause(); });
+                <\/script>`;
+            videoContainer.appendChild(iframe);
+            localTrailerIframe = iframe;
+            clickOverlay.onclick = () => iframe.contentWindow.postMessage('toggle', '*');
+            videoAdded = true;
+        } else if (movie.RemoteTrailers?.length > 0 && window.YT) {
+            const trailerUrl = movie.RemoteTrailers[0].Url;
+            const videoId = trailerUrl.match(/[?&]v=([^&]+)/)?.[1];
+            if (videoId) {
+                const vidDiv = createElem('div', 'video-player');
+                videoContainer.appendChild(vidDiv);
 
-        // remove border & scrollbar
-        Object.assign(iframe.style, {
-            width: '100%',
-            height: '100%',
-            border: '0',
-            overflow: 'hidden',
-            position: 'absolute',
-            inset: '0'
-        });
-        iframe.setAttribute('scrolling', 'no');
-        iframe.setAttribute('frameborder', '0');
-
-
-
-
-        iframe.srcdoc = [
-            '<!DOCTYPE html><html><head><meta charset="utf-8">',
-            '<style>',
-            'html,body { margin: 0; height: 100%; background: #000; }',
-            'video { width: 100%; height: 100%; object-fit: contain; outline: none; }',
-            'video::-webkit-media-controls-panel { display: none !important; -webkit-appearance: none; }',
-            'video::-moz-media-controls { display: none !important; }',
-            '</style></head><body>',
-            '<video id="lt" autoplay playsinline preload="auto" controls src="', finalUrl, '"></video>',
-            '<script>',
-            'const v=document.getElementById("lt");',
-            'const unmute=()=>{ try { v.volume = parent.globalVolume; v.muted = (parent.globalVolume === 0); } catch(e){} };',
-            'v.addEventListener("loadedmetadata",()=>{',
-            '  unmute();',
-            '  try {',
-            '    parent.postMessage({ type: "local-trailer-metadata", width: v.videoWidth, height: v.videoHeight }, "*");',
-            '  } catch(e){}',
-            '});',
-            'v.addEventListener("play",unmute);',
-            'v.addEventListener("ended",()=>{ parent.postMessage("local-trailer-ended", "*"); });',
-            'window.addEventListener("message",e=>{',
-            ' if(e.data==="pause")v.pause();',
-            ' if(e.data==="play")v.play();',
-            ' if(e.data==="toggle"){ v.paused?v.play():v.pause(); }',
-            ' if(e.data?.type==="setVolume"){ ',
-            ' v.volume = e.data.value;',
-            ' v.muted = (e.data.value===0);}',
-            '});',
-            '<\/script>',
-            '</body></html>'
-        ].join('');
-
-        videoContainer.appendChild(iframe);
-
-        iframe.addEventListener('load', () => {
-            try {
-                iframe.contentWindow?.postMessage(
-                    { type: 'setVolume', value: globalVolume }, '*'
-                );
-            } catch { }
-        });
-
-        // ⬇️ Add this block to resize the iframe based on actual video dimensions
-        window.addEventListener('message', function onMeta(e) {
-            if (e.data?.type === 'local-trailer-metadata') {
-                window.removeEventListener('message', onMeta); // Only handle once
-                const { width, height } = e.data;
-                if (width && height) {
-                    const aspectRatio = width / height;
-                    const videoContainer = iframe.parentElement;
-                    const h = videoContainer.clientHeight || 360;
-                    const w = h * aspectRatio;
-
-                    videoContainer.style.width = `${w}px`;
-
-                    const backdropElement = newSlide.querySelector('.backdrop');
-                    if (backdropElement) {
-                        backdropElement.style.width = `calc(100% - ${w * 0.8}px)`;
-                        backdropElement.style.webkitMaskImage =
-                            backdropElement.style.maskImage =
-                            'linear-gradient(to right, rgba(255,255,255,1) 0%, rgba(255,255,255,1) 65%, rgba(255,255,255,0) 100%)';
-                    }
-
-                    ['clickable-overlay'].forEach(cls => {
-                        const el = newSlide.querySelector(`.${cls}`);
-                        if (el) el.style.width = `calc(100% - ${w * 0.8}px)`;
-                    });
-                }
-            }
-        });
-        newSlide.appendChild(videoContainer);
-        localTrailerIframe = iframe; // keep ref for cleanup/pause
-
-        // sizing like the YT branch
-        const backdropElement = newSlide.querySelector('.backdrop');
-        if (backdropElement) {
-            const aspectRatio = 16 / 9;
-            const h = videoContainer.clientHeight || 360;
-            const w = h * aspectRatio;
-            videoContainer.style.width = `${w}px`;
-            videoContainer.style.webkitMaskImage = videoContainer.style.maskImage =
-                'linear-gradient(to right, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 1) 25%)';
-            backdropElement.style.width = `calc(100% - ${w * 0.8}px)`;
-            backdropElement.style.webkitMaskImage =
-                backdropElement.style.maskImage =
-                'linear-gradient(to right, rgba(255,255,255,1) 0%, rgba(255,255,255,1) 65%, rgba(255,255,255,0) 100%)';
-            ['clickable-overlay'].forEach(cls => {
-                const el = newSlide.querySelector(`.${cls}`);
-                if (el) el.style.width = `calc(100% - ${w * 0.8}px)`;
-            });
-        }
-
-        // show play/pause btn
-        const playPauseBtn = document.getElementById('playPauseButton');
-        if (playPauseBtn) {
-            playPauseBtn.style.display = 'inline-block';
-            const icon = playPauseBtn.querySelector('span.material-icons');
-            if (icon) icon.textContent = 'pause';
-        }
-
-        container.appendChild(newSlide);
-        void newSlide.offsetWidth;
-        newSlide.classList.add('visible');
-
-        const oldSlideElement = currentSlideElement;
-        if (oldSlideElement) {
-            oldSlideElement.classList.remove('visible');
-            setTimeout(() => oldSlideElement?.parentNode?.removeChild(oldSlideElement), 1300);
-        }
-        currentSlideElement = newSlide;
-        lastMovie = currentMovie;
-        currentMovie = movie;
-        updateSlideButtons();
-        return; // prevent falling through to YouTube
-    }
-
-    if (useTrailers && !hasLocalTrailer && movie.RemoteTrailers?.length > 0) {
-        const trailerUrl = movie.RemoteTrailers[0].Url;
-        let videoId = null;
-        try {
-            videoId = new URL(trailerUrl).searchParams.get('v');
-        } catch (e) {
-            console.error("Invalid trailer URL:", trailerUrl);
-        }
-
-        if (videoId) {
-            let aspectRatio = 16 / 9;
-            try {
-                const response = await fetch('https://noembed.com/embed?url=https://www.youtube.com/watch?v=' + videoId);
-                const data = await response.json();
-                if (data.width && data.height) aspectRatio = data.width / data.height;
-            } catch (e) {
-                console.error("Error fetching trailer embed data:", e);
-            }
-
-            const videoContainer = createElem('div', 'video-container', null, null, 'Play Trailer');
-            const videoElement = createElem('div', 'video-player');
-            videoContainer.appendChild(videoElement);
-            newSlide.appendChild(videoContainer);
-
-            // Initialize YouTube player after ensuring API is ready
-            youTubeAPIReadyPromise.then(YT => {
-                console.log("Initializing YouTube player for video ID:", videoId);
-                player = new YT.Player(videoElement, {
-                    height: '100%',
-                    width: '100%',
-                    videoId: videoId,
-                    playerVars: {
-                        'autoplay': 1,
-                        'controls': 0,
-                        'loop': 0,
-                        'rel': 0,
-                        'modestbranding': 1,
-                        'color': 'white',
-                        'iv_load_policy': 3,
-                        'fs': 0
-                    },
+                player = new YT.Player(vidDiv, {
+                    height: '100%', width: '100%', videoId: videoId,
+                    playerVars: { 'autoplay': 1, 'controls': 0, 'modestbranding': 1, 'rel': 0, 'iv_load_policy': 3, 'disablekb': 1, 'fs': 0, 'playsinline': 1 },
                     events: {
-                        'onReady': event => {
-                            console.log("YouTube player ready.");
-                            event.target.playVideo();
-                            event.target.setVolume(globalVolume * 100);
-
-                            const videoContainerHeight = videoContainer.clientHeight;
-                            const calculatedWidth = videoContainerHeight * aspectRatio;
-                            videoContainer.style.width = `${calculatedWidth}px`;
-
-                            const backdropElement = newSlide.querySelector('.backdrop');
-                            if (backdropElement) {
-                                // Change multiplier from 0.7 to 0.8 for 80%
-                                backdropElement.style.width = `calc(100% - ${calculatedWidth * 0.8}px)`;
-
-                                // Update mask gradient to match new width
-                                backdropElement.style.webkitMaskImage = backdropElement.style.maskImage = `linear-gradient(to right, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 1) ${65}%, rgba(255, 255, 255, 0) 100%)`;
-
-                                backdropElement.style.backgroundImage = `url(/Items/${movie.Id}/Images/Backdrop/0)`;
-                                backdropElement.style.backgroundSize = 'cover';
-                                backdropElement.style.backgroundPosition = 'center';
-                            }
-
-                            const videoPlayerElement = newSlide.querySelector('.video-player');
-                            if (videoPlayerElement) {
-                                videoPlayerElement.style.webkitMaskImage = videoPlayerElement.style.maskImage = `linear-gradient(to right, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 1) 25%)`;
-                            }
-
-                            ['clickable-overlay'].forEach(cls => {
-                                const element = newSlide.querySelector(`.${cls}`);
-                                if (element) element.style.width = `calc(100% - ${calculatedWidth * 0.8}px)`;
-                            });
-                            const playPauseBtn = document.getElementById('playPauseButton');
-                            if (playPauseBtn) {
-                                playPauseBtn.style.display = 'inline-block';
-
-                                const nav = document.getElementById('navButtons');
-                                const playIcon = playPauseBtn.querySelector('span.material-icons');
-                                if (playIcon) {
-                                    playIcon.textContent = 'pause'; // Assume trailer auto-plays
-                                }
-                            }
-
+                        'onReady': (e) => {
+                            if(!isHovering) { cleanup(); return; }
+                            e.target.setVolume(globalVolume * 100);
+                            backdropImg.style.opacity = '0';
+                            updateVolumeButtonVisibility(true);
+                            const txt = newSlide.querySelector('.text-container');
+                            if(txt) txt.classList.add('fade-out');
                         },
-                        'onStateChange': event => {
-                            if (event.data === YT.PlayerState.ENDED) {
-                                console.log("YouTube video ended. Fetching next movie.");
-                                setTimeout(fetchNextMovie, 100);
-                            }
-                        },
-                        'onError': event => {
-                            console.error("YouTube Player Error:", event.data);
-                            if (player) {
-                                player.destroy();
-                                player = null;
-                            }
-
-                            ['backdrop', 'plot', 'lorem-ipsum'].forEach(cls => {
-                                const element = newSlide.querySelector(`.${cls}`);
-                                if (element) element.style.width = '100%';
-                            });
-                            videoContainer.style.width = '0';
-                            startSlideChangeTimer();
+                        'onStateChange': (e) => {
+                            if (e.data === YT.PlayerState.ENDED) { backdropImg.style.opacity = '1'; cleanup(); }
                         }
                     }
                 });
-            }).catch(error => {
-                console.error("YouTube Iframe API is not ready or failed to load:", error);
-                startSlideChangeTimer();
-            });
-        } else {
-            console.warn("Trailer video ID not found for movie:", movie.Name);
-            startSlideChangeTimer();
+                clickOverlay.onclick = () => player.getPlayerState() === 1 ? player.pauseVideo() : player.playVideo();
+                videoAdded = true;
+            }
         }
-    } else {
-        startSlideChangeTimer();
+
+        if (videoAdded) {
+            newSlide.appendChild(videoContainer);
+            if (localData) {
+                 setTimeout(() => { 
+                     if(isHovering) {
+                         backdropImg.style.opacity = '0';
+                         updateVolumeButtonVisibility(true);
+
+                         const txt = newSlide.querySelector('.text-container');
+                         if(txt) txt.classList.add('fade-out');
+                     }
+                 }, 500);
+            }
+        }
+    };
+
+    // Update the global reference to the current trailer starter
+    currentTrailerStarter = startTrailer;
+
+    // Check immediately if we are already hovering (e.g. user clicked Next)
+    if (isHovering) {
+        trailerHoverTimeout = setTimeout(() => {
+            if (isHovering && currentTrailerStarter) currentTrailerStarter();
+        }, 300);
     }
 
+    // Mount Slide
+    if (window.currentSlideElement) {
+        const old = window.currentSlideElement;
+        old.classList.remove('visible');
+        setTimeout(() => old.remove(), 1300);
+    }
+    
     container.appendChild(newSlide);
     void newSlide.offsetWidth;
     newSlide.classList.add('visible');
-
-    const oldSlideElement = currentSlideElement; // Capture the old slide
-    if (oldSlideElement) {
-        oldSlideElement.classList.remove('visible');
-        setTimeout(() => {
-            if (oldSlideElement && oldSlideElement.parentNode) {
-                oldSlideElement.parentNode.removeChild(oldSlideElement);
-                console.log("Old slide removed from DOM.");
-            }
-        }, 1300); // Remove after transition
-    }
-    // Update currentSlideElement
-    currentSlideElement = newSlide;
-
-    lastMovie = currentMovie;
-    currentMovie = movie;
-
+    
+    window.currentSlideElement = newSlide;
+    window.currentMovie = movie;
     updateSlideButtons();
 };
 
@@ -595,78 +412,100 @@ const fetchRandomMovie = () => {
     }
 };
 
-// Fetch the next movie based on the current list or randomly
 const fetchNextMovie = () => {
-    if (currentMovie) lastMovie = currentMovie;
+    if (isFetching) return; // Block double-clicks or race conditions
+    isFetching = true;
 
-    // Corrected fetchCurrentUserId function
-    const fetchCurrentUserId = () => fetch(`/Sessions?api_key=${token}`, { credentials: 'same-origin' })
-        .then(response => {
-            if (!response.ok) throw new Error(`Network response was not ok: ${response.statusText}`);
-            return response.json();
+    // 1. History Navigation
+    if (historyIndex < historyList.length - 1) {
+        historyIndex++;
+        console.log("History Forward to index:", historyIndex);
+        createSlideElement(historyList[historyIndex]);
+        isFetching = false;
+        return;
+    }
+
+    // 2. Buffer Navigation
+    if (preloadedMovie) {
+        addToHistory(preloadedMovie);
+        createSlideElement(preloadedMovie);
+        
+        preloadedMovie = null;
+        preloadedImage = null;
+        isFetching = false;
+        
+        preloadNextMovie(); // Start buffering next
+        return;
+    }
+
+    // 3. Cold Fetch
+    const uid = fallbackUserId;
+    const itemTypes = moviesSeriesBoth === 1 ? 'Movie' : (moviesSeriesBoth === 2 ? 'Series' : 'Movie,Series');
+    
+    fetch(`/Users/${uid}/Items?IncludeItemTypes=${itemTypes}&Recursive=true&Limit=1&SortBy=random&Fields=Id,Overview,RemoteTrailers,PremiereDate,RunTimeTicks,ChildCount,Title,Type,Genres,OfficialRating,CommunityRating&api_key=${token}`)
+        .then(r => r.json())
+        .then(d => { 
+            if (d.Items?.[0]) {
+                const mov = d.Items[0];
+                addToHistory(mov);
+                createSlideElement(mov);
+            }
+            isFetching = false;
+            preloadNextMovie(); 
         })
-        .then(sessions => {
-            const currentSession = sessions.find(session => session.UserId);
-            return currentSession ? currentSession.UserId : null;
-        })
-        .catch(error => {
-            console.error("Error fetching current user ID:", error);
-            return null;
+        .catch(e => {
+            console.error("Fetch failed:", e);
+            isFetching = false;
         });
-
-    fetchCurrentUserId().then(currentUserId => {
-        if (!currentUserId) {
-            console.warn("Current user ID not found.");
-            isChangingSlide = false;
-            return;
-        }
-
-        if (movieList.length > 0) {
-            if (currentMovieIndex >= movieList.length) currentMovieIndex = 0;
-            const movieId = movieList[currentMovieIndex];
-            currentMovieIndex++;
-
-            fetch(`/Users/${currentUserId}/Items/${movieId}?Fields=Overview,RemoteTrailers,PremiereDate,RunTimeTicks,ChildCount,Title,Type,Genres,OfficialRating,CommunityRating&api_key=${token}`)
-                .then(response => {
-                    if (!response.ok) throw new Error(`Failed to fetch movie: ${response.statusText}`);
-                    return response.json();
-                })
-                .then(movie => {
-                    console.log("Fetched movie from custom list:", movie.Name);
-                    checkBackdropAndLogo(movie);
-                })
-                .catch(error => {
-                    console.error("Error fetching movie from custom list:", error);
-                    displayError("Failed to load the next movie. Please try again.");
-                    startSlideChangeTimer();
-                })
-                .finally(() => { isChangingSlide = false; });
-        } else {
-            const itemTypes = moviesSeriesBoth === 1 ? 'Movie' : (moviesSeriesBoth === 2 ? 'Series' : 'Movie,Series');
-            fetch(`/Users/${currentUserId}/Items?IncludeItemTypes=${itemTypes}&Recursive=true&Limit=1&SortBy=random&Fields=Id,Overview,RemoteTrailers,PremiereDate,RunTimeTicks,ChildCount,Title,Type,Genres,OfficialRating,CommunityRating&api_key=${token}`)
-                .then(response => {
-                    if (!response.ok) throw new Error(`Failed to fetch random movie: ${response.statusText}`);
-                    return response.json();
-                })
-                .then(data => {
-                    if (data.Items[0]) {
-                        console.log("Fetched random movie:", data.Items[0].Name);
-                        checkBackdropAndLogo(data.Items[0]);
-                    } else {
-                        console.warn("No items found in random fetch.");
-                        displayError("No movies found to display.");
-                        startSlideChangeTimer();
-                    }
-                })
-                .catch(error => {
-                    console.error("Error fetching random movie:", error);
-                    displayError("Failed to load the next movie. Please try again.");
-                    startSlideChangeTimer();
-                })
-                .finally(() => { isChangingSlide = false; });
-        }
-    });
 };
+
+const navigatePrevious = () => {
+    if (historyIndex > 0) {
+        historyIndex--;
+        console.log("History Back to index:", historyIndex);
+        createSlideElement(historyList[historyIndex]);
+    }
+};
+
+// New Function: Fetch a movie silently in the background
+const preloadNextMovie = () => {
+    const uid = fallbackUserId;
+    if (!token || !uid) return;
+    const itemTypes = moviesSeriesBoth === 1 ? 'Movie' : (moviesSeriesBoth === 2 ? 'Series' : 'Movie,Series');
+    
+    // Fetch 1 random item
+    fetch(`/Users/${uid}/Items?IncludeItemTypes=${itemTypes}&Recursive=true&Limit=1&SortBy=random&Fields=Id,Overview,RemoteTrailers,PremiereDate,RunTimeTicks,ChildCount,Title,Type,Genres,OfficialRating,CommunityRating&api_key=${token}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.Items?.[0]) {
+                const mov = data.Items[0];
+                // Check Backdrop existence
+                const img = new Image();
+                img.onload = () => {
+                    preloadedMovie = mov;
+                    preloadedImage = img; // Keep ref so garbage collector doesn't kill it
+                    console.log("Buffered:", mov.Name);
+                };
+                img.onerror = () => {
+                    console.log("Bad backdrop, skipping:", mov.Name);
+                    preloadNextMovie(); // Retry immediately
+                };
+                img.src = `/Items/${mov.Id}/Images/Backdrop/0`;
+            }
+        });
+};
+
+const addToHistory = (movie) => {
+    historyList.push(movie);
+    historyIndex = historyList.length - 1;
+
+    // Limit to 30
+    if (historyList.length > 30) {
+        historyList.shift();
+        historyIndex--; 
+    }
+};
+
 
 // Start a timer to change slides after a specified interval
 const startSlideChangeTimer = () => {
@@ -686,7 +525,7 @@ const checkNavigation = () => {
             url.includes("/web/index.html#/home.html") ||
             url === "/web/index.html#/home" ||
             url.endsWith("/web/");
-            
+
         if (isHomePage(newLocation)) {
             if (!isHomePageActive) {
                 console.log("Returning to homepage, reactivating slideshow");
@@ -698,15 +537,15 @@ const checkNavigation = () => {
         } else if (isHomePageActive) {
             console.log("Leaving homepage, shutting down slideshow");
             shutdown();
-            setTimeout(function () {
-                window.location.href = window.location.href;
-                cleanup();
-                /* This page reload is strangely critical to ensure
-                we don't double the script vars upon navigating home
-                using Jellyfin's home button. But it makes videos only
-                load on home not navback. Meh, lesser of two evils;
-                True SPA headache... */
-            }, 500);
+            // setTimeout(function () {
+            //     window.location.href = window.location.href;
+            //     cleanup();
+            //     /* This page reload is strangely critical to ensure
+            //     we don't double the script vars upon navigating home
+            //     using Jellyfin's home button. But it makes videos only
+            //     load on home not navback. Meh, lesser of two evils;
+            //     True SPA headache... */
+            // }, 500);
         }
     }
 };
@@ -715,57 +554,48 @@ const checkNavigation = () => {
 const attachButtonListeners = () => {
     const rightButton = document.getElementById('rightButton');
     const leftButton = document.getElementById('leftButton');
-    const mediaButton = document.getElementById('mediaButton');
-    const playPauseButton = document.getElementById('playPauseButton');
-    if (playPauseButton) {
-        playPauseButton.onclick = () => {
-            const icon = playPauseButton.querySelector('span.material-icons');
-
-            if (player && typeof player.getPlayerState === 'function') {
-                const state = player.getPlayerState();
-                if (state === YT.PlayerState.PLAYING) {
-                    player.pauseVideo();
-                    console.log("YouTube player paused.");
-                    if (icon) icon.textContent = 'play_arrow';
-                } else {
-                    player.playVideo();
-                    console.log("YouTube player playing.");
-                    if (icon) icon.textContent = 'pause';
-                }
-            } else if (localTrailerIframe?.contentWindow) {
-                localTrailerIframe.contentWindow.postMessage('toggle', '*');
-
-                // We'll assume the current state and flip it.
-                if (icon) {
-                    icon.textContent = icon.textContent === 'pause' ? 'play_arrow' : 'pause';
-                }
-            }
-        };
-    }
 
     if (rightButton && leftButton) {
         rightButton.onclick = fetchNextMovie;
-        leftButton.onclick = () => {
-            if (lastMovie) {
-                console.log("Navigating to previous movie:", lastMovie.Name);
-                createSlideElement(lastMovie, true);
-            }
-        };
+        leftButton.onclick = navigatePrevious;
+        fetchNextMovie();
+        setTimeout(preloadNextMovie, 2000);
         console.log("Navigation button listeners attached.");
     }
 
-    // Media info button
-    if (mediaButton) {
-        mediaButton.onclick = () => {
-            if (currentMovie && currentMovie.Id) {
-                window.top.Emby.Page.showItem(currentMovie.Id);
-            } else {
-                console.warn('No current movie to show.');
-            }
-        };
-        console.log("Media info button listener attached.");
-    }
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowRight') fetchNextMovie();
+        if (e.key === 'ArrowLeft') navigatePrevious();
+    });
 
+    document.body.addEventListener('mouseenter', () => {
+        isHovering = true;
+        if (trailerHoverTimeout) clearTimeout(trailerHoverTimeout);
+        trailerHoverTimeout = setTimeout(() => {
+            if (isHovering && currentTrailerStarter) currentTrailerStarter();
+        }, 300);
+    });
+
+    document.body.addEventListener('mousemove', () => {
+        // Fallback: sometimes iframe mouseenter is finicky
+        if (!isHovering) {
+            isHovering = true;
+            if (trailerHoverTimeout) clearTimeout(trailerHoverTimeout);
+            trailerHoverTimeout = setTimeout(() => {
+                if (isHovering && currentTrailerStarter) currentTrailerStarter();
+            }, 300);
+        }
+    });
+
+    document.body.addEventListener('mouseleave', () => {
+        isHovering = false;
+        if (trailerHoverTimeout) clearTimeout(trailerHoverTimeout);
+        cleanup(); // Stop trailer
+        updateVolumeButtonVisibility(false);
+        // Show backdrop again
+        const backdrop = document.querySelector('.backdrop');
+        if (backdrop) backdrop.style.opacity = '1';
+    });
 };
 
 function initVolumeControl() {
