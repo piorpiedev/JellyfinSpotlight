@@ -586,7 +586,7 @@ body {
 /* Navigation Buttons Container */
 #navButtons {
   position: absolute;
-  bottom: 4.1em;
+  bottom: 5em;
   right: 1em;
   display: flex;
   z-index: 2;
