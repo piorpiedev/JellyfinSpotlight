@@ -47,6 +47,25 @@ const getJellyfinAuth = () => {
 
 const { token, userId: fallbackUserId } = getJellyfinAuth();
 
+async function playMovie(itemId) {
+    const client = window.parent.ApiClient;
+    const deviceId = client.deviceId();
+    const sessions = await client.getSessions();
+    const mySessions = sessions.filter(s => s.DeviceId === deviceId);
+    mySessions.sort((a,b) => new Date(b.LastActivityDate) - new Date(a.LastActivityDate))
+
+    const mySession = mySessions[0];
+    if (mySession) {
+        await client.sendPlayCommand(mySession.Id, {
+            PlayCommand: 'PlayNow',
+            ItemIds: [itemId],
+            StartPositionTicks: 0,
+            MediaSourceId: itemId, 
+            ControllingUserId: client.getCurrentUserId() 
+        });
+    }
+}
+
 // Create and return a new DOM element with specified attributes
 const createElem = (tag, className, textContent, src, alt) => {
     const elem = document.createElement(tag);
@@ -140,7 +159,7 @@ const updateSlideButtons = () => {
 };
 
 async function checkLocalTrailer(itemId) {
-    const uid = fallbackUserId; // already from getJellyfinAuth()
+    const uid = fallbackUserId;
     if (!token || !uid) return null;
 
     try {
@@ -230,18 +249,14 @@ const createSlideElement = async (movie) => {
     playBtn.innerHTML = '<span class="material-icons">play_arrow</span> Play';
     playBtn.onclick = (e) => { 
         e.stopPropagation();
-        try {
-            // Construct deep link for playback
-            // Standard Web client format: #/play?ids=ITEM_ID
-            window.top.location.hash = `/play?ids=${movie.Id}`;
-        } catch (err) {
-            console.error("Deep link failed, falling back to item page", err);
-            window.top.Emby.Page.showItem(movie.Id);
-        }
+        playMovie(movie.Id);
     };
     const infoBtn = createElem('button', 'btn-hero btn-info');
     infoBtn.innerHTML = '<span class="material-icons">info_outline</span> More Info';
-    infoBtn.onclick = (e) => { e.stopPropagation(); window.top.Emby.Page.showItem(movie.Id); };
+    infoBtn.onclick = (e) => { 
+        e.stopPropagation(); 
+        window.top.Emby.Page.showItem(movie.Id); 
+    };
     
     btnContainer.appendChild(playBtn);
     btnContainer.appendChild(infoBtn);
