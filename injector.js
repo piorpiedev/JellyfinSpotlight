@@ -1,5 +1,5 @@
 // Create an iframe and inject the Spotlight HTML/CSS
-(async function() {
+(async function () {
     const htmlUrl = "https://raw.githubusercontent.com/piorpiedev/JellyfinSpotlight/refs/heads/main/spotlight.html";
     const cssUrl = "https://raw.githubusercontent.com/piorpiedev/JellyfinSpotlight/refs/heads/main/spotlight.css";
     const jsHeadUrl = "https://raw.githubusercontent.com/piorpiedev/JellyfinSpotlight/refs/heads/main/spotlight-head.js";
@@ -30,7 +30,7 @@
         iframe.id = "spotlight-iframe";
         iframe.className = "spotlightiframe";
         iframe.tabIndex = 0;
-        
+
         // Position the iframe in the dashboard
         iframe.style.cssText = `
             width: 100%;
@@ -75,13 +75,13 @@
 
         } catch (error) {
             console.error("Spotlight: Error loading plugin", error);
-            iframe.remove(); 
+            iframe.remove();
         }
     };
 
     // Run immediately and listen for navigation (Jellyfin is a Single Page App)
     checkAndInject();
-    
+
     // Re-run when internal navigation occurs
     const pushState = history.pushState;
     history.pushState = function () {

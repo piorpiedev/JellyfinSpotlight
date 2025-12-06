@@ -88,7 +88,7 @@ async function buildAndCopy() {
 `;
 
         await clipboardy.write(finalInjectionScript);
-        
+
         console.log("✅ Successo! Script copiato nella clipboard.");
         console.log("👉 Ora vai sulla console del browser e premi CTRL+V");
 
