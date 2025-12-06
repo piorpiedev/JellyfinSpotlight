@@ -602,14 +602,14 @@ const checkNavigation = () => {
     }
 
     // navback
-    // if (isHomePage && !document.getElementById("spotlight-iframe")) {
-    //     console.log("Returning to homepage, reactivating slideshow");
-    //     isHomePageActive = true;
-    //     cleanup();
-    //     fetchRandomMovie();
-    //     attachButtonListeners();
-    //     return;
-    // }
+    if (isHomePage && !window.parent.document.getElementById("spotlight-iframe")) {
+        console.log("Returning to homepage, reactivating slideshow");
+        isHomePageActive = true;
+        cleanup();
+        fetchRandomMovie();
+        attachButtonListeners();
+        return;
+    }
 };
 
 // Attach event listeners to navigation buttons
