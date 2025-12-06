@@ -468,6 +468,12 @@ const validateAndLoad = (movie) => {
         }
     };
 
+    // Sometimes Jellyfin decides to ignore filters when sorting by random...
+    if ((movie.CommunityRating || 0) < 4) {
+        console.warn(`Skipping "${movie.Name}" - Rating empty or below 4/10.`);
+        return;
+    }
+
     // Check Backdrop
     const imgBack = new Image();
     imgBack.onload = () => { backdropLoaded = true; checkDone(); };
